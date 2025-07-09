@@ -1,39 +1,49 @@
 const express = require("express");
-const mongoose = require("mongoose");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const dns = require("dns");
-const Url = require("./models/Url");
+const urlParser = require("url");
 
 const app = express();
 app.use(cors());
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(express.static("public"));
 
-mongoose.connect("mongodb://localhost:27017/urlshortener", {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-});
+const urls = []; // In-memory storage
 
 app.get("/", (req, res) => {
   res.sendFile(__dirname + "/public/index.html");
 });
 
-// === POST ===
-app.post("/api/shorturl", async (req, res) => {
-  const url = req.body.url;
+// POST endpoint to shorten a URL
+app.post("/api/shorturl", (req, res) => {
+  const inputUrl = req.body.url;
+  const hostname = urlParser.parse(inputUrl).hostname;
 
-  // Validate domain
-  try {
-    const hostname = new URL(url).hostname;
+  dns.lookup(hostname, (err) => {
+    if (err) {
+      return res.json({ error: "invalid url" });
+    } else {
+      const id = urls.length + 1;
+      urls.push({ original_url: inputUrl, short_url: id });
+      res.json({ original_url: inputUrl, short_url: id });
+    }
+  });
+});
 
-    dns.lookup(hostname, async (err) => {
-      if (err) return res.json({ error: "Invalid URL" });
+// Redirect using short URL
+app.get("/api/shorturl/:id", (req, res) => {
+  const id = parseInt(req.params.id);
+  const entry = urls.find((item) => item.short_url === id);
 
-      // Check if already exists
-      let found = await Url.findOne({ original_url: url });
-      if (found) return res.json(found);
+  if (entry) {
+    res.redirect(entry.original_url);
+  } else {
+    res.json({ error: "No short URL found for the given input" });
+  }
+});
 
-      // Count for short ID
-      const count = await Url.countDocuments();
-      const newUrl = new Url({ original_url: url,
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`App is running on port ${PORT}`);
+});
